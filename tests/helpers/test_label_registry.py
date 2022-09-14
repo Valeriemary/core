@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import label_registry
+from homeassistant.helpers import device_registry as dr, label_registry
 from homeassistant.helpers.label_registry import (
     EVENT_LABEL_REGISTRY_UPDATED,
     STORAGE_KEY,
@@ -332,3 +332,58 @@ async def test_async_get_label_by_name_not_found(hass: HomeAssistant) -> None:
     assert len(registry.labels) == 1
 
     assert registry.async_get_label_by_name("non_exist") is None
+
+
+async def test_labels_removed_from_devices(hass: HomeAssistant) -> None:
+    """Tests if label gets removed from devices when the label is removed."""
+    registry = label_registry.async_get(hass)
+    label1 = registry.async_create("label1")
+    label2 = registry.async_create("label2")
+    assert len(registry.labels) == 2
+
+    device_registry = dr.async_get(hass)
+    entry = device_registry.async_get_or_create(
+        config_entry_id="123",
+        connections={(dr.CONNECTION_NETWORK_MAC, "12:34:56:AB:CD:23")},
+        identifiers={("bridgeid", "0123")},
+        manufacturer="manufacturer",
+        model="model",
+    )
+    device_registry.async_update_device(entry.id, labels={label1.label_id})
+    entry = device_registry.async_get_or_create(
+        config_entry_id="456",
+        connections={(dr.CONNECTION_NETWORK_MAC, "12:34:56:AB:CD:56")},
+        identifiers={("bridgeid", "0456")},
+        manufacturer="manufacturer",
+        model="model",
+    )
+    device_registry.async_update_device(entry.id, labels={label2.label_id})
+    entry = device_registry.async_get_or_create(
+        config_entry_id="789",
+        connections={(dr.CONNECTION_NETWORK_MAC, "12:34:56:AB:CD:89")},
+        identifiers={("bridgeid", "0789")},
+        manufacturer="manufacturer",
+        model="model",
+    )
+    device_registry.async_update_device(
+        entry.id, labels={label1.label_id, label2.label_id}
+    )
+
+    entries = dr.async_entries_for_label(device_registry, label1.label_id)
+    assert len(entries) == 2
+    entries = dr.async_entries_for_label(device_registry, label2.label_id)
+    assert len(entries) == 2
+
+    registry.async_delete(label1.label_id)
+
+    entries = dr.async_entries_for_label(device_registry, label1.label_id)
+    assert len(entries) == 0
+    entries = dr.async_entries_for_label(device_registry, label2.label_id)
+    assert len(entries) == 2
+
+    registry.async_delete(label2.label_id)
+
+    entries = dr.async_entries_for_label(device_registry, label1.label_id)
+    assert len(entries) == 0
+    entries = dr.async_entries_for_label(device_registry, label2.label_id)
+    assert len(entries) == 0

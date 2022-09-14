@@ -33,7 +33,7 @@ DATA_REGISTRY = "device_registry"
 EVENT_DEVICE_REGISTRY_UPDATED = "device_registry_updated"
 STORAGE_KEY = "core.device_registry"
 STORAGE_VERSION_MAJOR = 1
-STORAGE_VERSION_MINOR = 3
+STORAGE_VERSION_MINOR = 4
 SAVE_DELAY = 10
 CLEANUP_DELAY = 10
 
@@ -80,6 +80,7 @@ class DeviceEntry:
     hw_version: str | None = attr.ib(default=None)
     id: str = attr.ib(factory=uuid_util.random_uuid_hex)
     identifiers: set[tuple[str, str]] = attr.ib(converter=set, factory=set)
+    labels: set[str] = attr.ib(factory=set)
     manufacturer: str | None = attr.ib(default=None)
     model: str | None = attr.ib(default=None)
     name_by_user: str | None = attr.ib(default=None)
@@ -219,6 +220,10 @@ class DeviceRegistryStore(storage.Store[dict[str, list[dict[str, Any]]]]):
                 # Version 1.3 adds hw_version
                 for device in old_data["devices"]:
                     device["hw_version"] = None
+            if old_minor_version < 4:
+                # Introduced in 2022.10
+                for device in old_data["devices"]:
+                    device["labels"] = device.get("labels", set())
 
         if old_major_version > 1:
             raise NotImplementedError
@@ -432,6 +437,7 @@ class DeviceRegistry:
         disabled_by: DeviceEntryDisabler | None | UndefinedType = UNDEFINED,
         entry_type: DeviceEntryType | None | UndefinedType = UNDEFINED,
         hw_version: str | None | UndefinedType = UNDEFINED,
+        labels: set[str] | UndefinedType = UNDEFINED,
         manufacturer: str | None | UndefinedType = UNDEFINED,
         merge_connections: set[tuple[str, str]] | UndefinedType = UNDEFINED,
         merge_identifiers: set[tuple[str, str]] | UndefinedType = UNDEFINED,
@@ -522,10 +528,11 @@ class DeviceRegistry:
             ("disabled_by", disabled_by),
             ("entry_type", entry_type),
             ("hw_version", hw_version),
+            ("labels", labels),
             ("manufacturer", manufacturer),
             ("model", model),
-            ("name", name),
             ("name_by_user", name_by_user),
+            ("name", name),
             ("suggested_area", suggested_area),
             ("sw_version", sw_version),
             ("via_device_id", via_device_id),
@@ -615,6 +622,7 @@ class DeviceRegistry:
                         tuple(iden)  # type: ignore[misc]
                         for iden in device["identifiers"]
                     },
+                    labels=set(device["labels"]),
                     manufacturer=device["manufacturer"],
                     model=device["model"],
                     name_by_user=device["name_by_user"],
@@ -663,6 +671,7 @@ class DeviceRegistry:
                 "hw_version": entry.hw_version,
                 "id": entry.id,
                 "identifiers": list(entry.identifiers),
+                "labels": list(entry.labels),
                 "manufacturer": entry.manufacturer,
                 "model": entry.model,
                 "name_by_user": entry.name_by_user,
@@ -734,6 +743,15 @@ class DeviceRegistry:
             if area_id == device.area_id:
                 self.async_update_device(dev_id, area_id=None)
 
+    @callback
+    def async_clear_label_id(self, label_id: str) -> None:
+        """Clear label from registry entries."""
+        for device_id, entry in self.devices.items():
+            if label_id in entry.labels:
+                labels = entry.labels.copy()
+                labels.remove(label_id)
+                self.async_update_device(device_id, labels=labels)
+
 
 @callback
 def async_get(hass: HomeAssistant) -> DeviceRegistry:
@@ -752,6 +770,14 @@ async def async_load(hass: HomeAssistant) -> None:
 def async_entries_for_area(registry: DeviceRegistry, area_id: str) -> list[DeviceEntry]:
     """Return entries that match an area."""
     return [device for device in registry.devices.values() if device.area_id == area_id]
+
+
+@callback
+def async_entries_for_label(
+    registry: DeviceRegistry, label_id: str
+) -> list[DeviceEntry]:
+    """Return entries that match an label."""
+    return [device for device in registry.devices.values() if label_id in device.labels]
 
 
 @callback
