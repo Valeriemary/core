@@ -118,11 +118,9 @@ class LabelRegistry:
         """Delete label."""
         label = self.labels[label_id]
 
-        # Clean up all references (TODO)
-        device_registry = dr.async_get(self.hass)
-        device_registry.async_clear_label_id(label_id)
-        _ = er.async_get(self.hass)
-        # entity_registry.async_clear_label_id(label_id)
+        # Clean up all references
+        dr.async_get(self.hass).async_clear_label_id(label_id)
+        er.async_get(self.hass).async_clear_label_id(label_id)
 
         del self.labels[label_id]
         del self._normalized_name_label_idx[label.normalized_name]

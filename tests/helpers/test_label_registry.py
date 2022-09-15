@@ -5,7 +5,11 @@ from typing import Any
 import pytest
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, label_registry
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    label_registry,
+)
 from homeassistant.helpers.label_registry import (
     EVENT_LABEL_REGISTRY_UPDATED,
     STORAGE_KEY,
@@ -386,4 +390,53 @@ async def test_labels_removed_from_devices(hass: HomeAssistant) -> None:
     entries = dr.async_entries_for_label(device_registry, label1.label_id)
     assert len(entries) == 0
     entries = dr.async_entries_for_label(device_registry, label2.label_id)
+    assert len(entries) == 0
+
+
+async def test_labels_removed_from_entities(hass: HomeAssistant) -> None:
+    """Tests if label gets removed from entity when the label is removed."""
+    registry = label_registry.async_get(hass)
+    label1 = registry.async_create("label1")
+    label2 = registry.async_create("label2")
+    assert len(registry.labels) == 2
+
+    entity_registry = er.async_get(hass)
+    entry = entity_registry.async_get_or_create(
+        domain="light",
+        platform="hue",
+        unique_id="123",
+    )
+    entity_registry.async_update_entity(entry.entity_id, labels={label1.label_id})
+    entry = entity_registry.async_get_or_create(
+        domain="light",
+        platform="hue",
+        unique_id="456",
+    )
+    entity_registry.async_update_entity(entry.entity_id, labels={label2.label_id})
+    entry = entity_registry.async_get_or_create(
+        domain="light",
+        platform="hue",
+        unique_id="789",
+    )
+    entity_registry.async_update_entity(
+        entry.entity_id, labels={label1.label_id, label2.label_id}
+    )
+
+    entries = er.async_entries_for_label(entity_registry, label1.label_id)
+    assert len(entries) == 2
+    entries = er.async_entries_for_label(entity_registry, label2.label_id)
+    assert len(entries) == 2
+
+    registry.async_delete(label1.label_id)
+
+    entries = er.async_entries_for_label(entity_registry, label1.label_id)
+    assert len(entries) == 0
+    entries = er.async_entries_for_label(entity_registry, label2.label_id)
+    assert len(entries) == 2
+
+    registry.async_delete(label2.label_id)
+
+    entries = er.async_entries_for_label(entity_registry, label1.label_id)
+    assert len(entries) == 0
+    entries = er.async_entries_for_label(entity_registry, label2.label_id)
     assert len(entries) == 0
